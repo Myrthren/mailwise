@@ -1,7 +1,7 @@
 import type { Config } from "@netlify/functions";
 
 export default async () => {
-  const url = `${process.env.URL ?? "https://mailwise-app.netlify.app"}/api/cron/run-watchers`;
+  const url = `${process.env.URL ?? "https://mailwise.space"}/api/cron/run-watchers`;
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },

@@ -48,6 +48,22 @@ export async function verifyPayPalWebhook(
   return data.verification_status === "SUCCESS";
 }
 
+export async function cancelSubscription(subscriptionId: string, reason: string) {
+  const token = await getAccessToken();
+  const res = await fetch(
+    `${PAYPAL_BASE}/v1/billing/subscriptions/${subscriptionId}/cancel`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }
+  );
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text();
+    throw new Error(`PayPal cancel failed: ${res.status} ${text}`);
+  }
+}
+
 export async function getSubscriptionDetails(subscriptionId: string) {
   const token = await getAccessToken();
 

@@ -1,9 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CheckCircle, Zap } from "lucide-react";
+
+declare global {
+  interface Window {
+    paypal?: {
+      Buttons: (opts: Record<string, unknown>) => { render: (selector: string | HTMLElement) => void };
+    };
+    __mwPayPalLoading?: Promise<void>;
+  }
+}
+
+function loadPayPalSdk(clientId: string): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.paypal) return Promise.resolve();
+  if (window.__mwPayPalLoading) return window.__mwPayPalLoading;
+  window.__mwPayPalLoading = new Promise<void>((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(
+      clientId
+    )}&vault=true&intent=subscription`;
+    s.setAttribute("data-sdk-integration-source", "button-factory");
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("PayPal SDK failed to load"));
+    document.head.appendChild(s);
+  });
+  return window.__mwPayPalLoading;
+}
 
 const PAYPAL_CLIENT_ID =
   "Ad69aCRO915AbyIBrcdwElMCyPEnbzRbByPb5vr2tD6RlOG8JNC8S34-8GCgNHG4PaDm2FVdWbFnx_m8";
@@ -224,39 +250,38 @@ function PayPalSubscribeButton({
   clientId: string;
   highlight: boolean;
 }) {
-  return (
-    <div>
-      <div id={containerId} className="min-h-[45px]" />
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            (function() {
-              if (window.__ppLoaded_${containerId}) return;
-              window.__ppLoaded_${containerId} = true;
-              var s = document.createElement('script');
-              s.src = 'https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription';
-              s.setAttribute('data-sdk-integration-source', 'button-factory');
-              s.onload = function() {
-                paypal.Buttons({
-                  style: {
-                    shape: 'rect',
-                    color: '${highlight ? "gold" : "black"}',
-                    layout: 'vertical',
-                    label: 'subscribe'
-                  },
-                  createSubscription: function(data, actions) {
-                    return actions.subscription.create({ plan_id: '${planId}' });
-                  },
-                  onApprove: function(data) {
-                    window.location.href = '/dashboard?subscribed=' + data.subscriptionID;
-                  }
-                }).render('#${containerId}');
-              };
-              document.head.appendChild(s);
-            })();
-          `,
-        }}
-      />
-    </div>
-  );
+  const renderedRef = useRef(false);
+
+  useEffect(() => {
+    if (renderedRef.current) return;
+    let cancelled = false;
+    loadPayPalSdk(clientId)
+      .then(() => {
+        if (cancelled || !window.paypal) return;
+        const target = document.getElementById(containerId);
+        if (!target || target.childNodes.length > 0) return;
+        renderedRef.current = true;
+        window.paypal
+          .Buttons({
+            style: {
+              shape: "rect",
+              color: highlight ? "gold" : "black",
+              layout: "vertical",
+              label: "subscribe",
+            },
+            createSubscription: (_data: unknown, actions: { subscription: { create: (o: { plan_id: string }) => unknown } }) =>
+              actions.subscription.create({ plan_id: planId }),
+            onApprove: (data: { subscriptionID: string }) => {
+              window.location.href = `/dashboard?subscribed=${data.subscriptionID}`;
+            },
+          })
+          .render(`#${containerId}`);
+      })
+      .catch((err) => console.error("PayPal load failed:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [planId, containerId, clientId, highlight]);
+
+  return <div id={containerId} className="min-h-[45px]" />;
 }
