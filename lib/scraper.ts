@@ -1,10 +1,4 @@
-import { chromium } from "playwright";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from "./supabase";
 
 interface WatcherResult {
   triggered: boolean;
@@ -20,49 +14,56 @@ interface Watcher {
   last_value?: string | null;
 }
 
-export async function runPriceWatcher(watcher: Watcher): Promise<WatcherResult> {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
-  await page.goto(watcher.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+async function fetchHtml(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-GB,en;q=0.9",
+    },
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  return await res.text();
+}
 
-  // Generic price extraction selectors — covers most retail sites
-  const priceSelectors = [
-    '[data-testid="price"]',
-    ".a-price-whole",         // Amazon
-    ".product-price",
-    ".price__current",
-    '[class*="price"]',
-    '[itemprop="price"]',
-    'meta[itemprop="price"]',
+function extractPrice(html: string): number | null {
+  // Try common structured-data patterns first
+  const patterns: RegExp[] = [
+    /<meta[^>]+itemprop=["']price["'][^>]+content=["']([\d.,]+)["']/i,
+    /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([\d.,]+)["']/i,
+    /"price"\s*:\s*"?([\d.,]+)"?/i,
+    /"priceCurrency"\s*:\s*"[^"]+"\s*,\s*"price"\s*:\s*"?([\d.,]+)"?/i,
+    /[£$€]\s?([\d]{1,3}(?:[,.][\d]{3})*(?:[.,]\d{1,2})?)/, // currency-prefixed number
   ];
-
-  let priceText = "";
-  for (const sel of priceSelectors) {
-    const el = page.locator(sel).first();
-    if (await el.count() > 0) {
-      const content = await el.getAttribute("content");
-      priceText = content ?? (await el.innerText());
-      if (priceText) break;
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m && m[1]) {
+      const n = parseFloat(m[1].replace(/,(?=\d{3}\b)/g, "").replace(",", "."));
+      if (!isNaN(n) && n > 0) return n;
     }
   }
+  return null;
+}
 
-  await browser.close();
+export async function runPriceWatcher(watcher: Watcher): Promise<WatcherResult> {
+  const html = await fetchHtml(watcher.url);
+  const currentPrice = extractPrice(html);
 
-  const priceMatch = priceText.match(/[\d,]+\.?\d*/);
-  if (!priceMatch) {
+  if (currentPrice === null) {
     return {
       triggered: false,
       message: "Could not extract price from page",
-      data: { raw: priceText },
+      data: {},
     };
   }
 
-  const currentPrice = parseFloat(priceMatch[0].replace(",", ""));
   const previousPrice = watcher.last_value ? parseFloat(watcher.last_value) : null;
 
-  // Store new price
-  await supabase
+  await supabaseAdmin
     .from("watchers")
     .update({ last_value: String(currentPrice) })
     .eq("id", watcher.id);
@@ -89,10 +90,14 @@ export async function runPriceWatcher(watcher: Watcher): Promise<WatcherResult> 
 }
 
 export async function runAppointmentWatcher(watcher: Watcher): Promise<WatcherResult> {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
-  await page.goto(watcher.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  const html = await fetchHtml(watcher.url);
+  // Strip tags to get rough page text
+  const pageText = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
   const availabilityKeywords = [
     "available",
@@ -103,7 +108,6 @@ export async function runAppointmentWatcher(watcher: Watcher): Promise<WatcherRe
     "next available",
     "slot available",
   ];
-
   const unavailableKeywords = [
     "no appointments",
     "no availability",
@@ -113,16 +117,13 @@ export async function runAppointmentWatcher(watcher: Watcher): Promise<WatcherRe
     "please try again later",
   ];
 
-  const pageText = (await page.innerText("body")).toLowerCase();
-  await browser.close();
-
   const hasAvailable = availabilityKeywords.some((kw) => pageText.includes(kw));
   const hasUnavailable = unavailableKeywords.some((kw) => pageText.includes(kw));
 
   const previousState = watcher.last_value;
   const currentState = hasAvailable && !hasUnavailable ? "available" : "unavailable";
 
-  await supabase
+  await supabaseAdmin
     .from("watchers")
     .update({ last_value: currentState })
     .eq("id", watcher.id);
