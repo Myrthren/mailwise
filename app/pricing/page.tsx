@@ -38,7 +38,7 @@ const plans = {
   monthly: [
     {
       name: "Basic",
-      price: "£4.99",
+      price: "£12.99",
       planId: "P-8L651216LM277770JNH36EPQ",
       containerId: "paypal-basic-monthly",
       features: ["1 email account", "1 watcher", "Daily summary", "Up to 5 alerts/day"],
@@ -46,7 +46,7 @@ const plans = {
     },
     {
       name: "Pro",
-      price: "£12.99",
+      price: "£24.99",
       planId: "P-9S46940070315343BNH36FHY",
       containerId: "paypal-pro-monthly",
       features: [
@@ -61,7 +61,7 @@ const plans = {
     },
     {
       name: "Elite",
-      price: "£24.99",
+      price: "£49.99",
       planId: "P-1T142263824632937NH36FZA",
       containerId: "paypal-elite-monthly",
       features: [
@@ -78,7 +78,7 @@ const plans = {
   yearly: [
     {
       name: "Basic",
-      price: "£47.99",
+      price: "£99.99",
       planId: "P-6AV22358XK931851TNH36F7Y",
       containerId: "paypal-basic-yearly",
       features: ["1 email account", "1 watcher", "Daily summary", "Up to 5 alerts/day"],
@@ -86,7 +86,7 @@ const plans = {
     },
     {
       name: "Pro",
-      price: "£119.99",
+      price: "£199.99",
       planId: "P-58T758988J9184355NH36GKI",
       containerId: "paypal-pro-yearly",
       features: [
@@ -101,7 +101,7 @@ const plans = {
     },
     {
       name: "Elite",
-      price: "£239.99",
+      price: "£299.99",
       planId: "P-3JK8714219541574NNH36GXQ",
       containerId: "paypal-elite-yearly",
       features: [
@@ -157,7 +157,7 @@ export default function PricingPage() {
             >
               Yearly
               <span className="bg-brand-green/20 text-brand-green text-xs px-1.5 py-0.5 rounded">
-                Save 20%
+                Save up to 50%
               </span>
             </button>
           </div>
